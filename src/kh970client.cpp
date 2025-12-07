@@ -124,7 +124,15 @@ void KH970Client::begin() {
   pinMode(KH_SCK, OUTPUT);
 }
 
-void KH970Client::append(uint8_t val) { outBytes[bytesToSend++] = val; }
+void KH970Client::append(uint8_t val) {
+  if (val != 0x8b) {
+    Serial.print("C:");
+    Serial.print(val, 16);
+    Serial.print(" | ");
+    Serial.println(val, 16);
+  }
+  outBytes[bytesToSend++] = val;
+}
 
 void KH970Client::update() {
   if (csi.update())
@@ -170,6 +178,12 @@ void KH970Client::update() {
 }
 
 void KH970Client::process(uint8_t bedVal) {
+  if (bedVal != 0x01) {
+    Serial.print("B:");
+    Serial.print(bedVal, 16);
+    Serial.print(" | ");
+    Serial.println(reverse(bedVal), 16);
+  }
   switch (bedVal) {
   case 0x01:
     // The "ping" message from the bed?
