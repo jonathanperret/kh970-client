@@ -1,0 +1,173 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>WebSerial Counter</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial; margin: 16px; }
+    .counter { font-size: 7rem; font-weight:700; text-align:center; letter-spacing:0.06em; }
+    .controls { display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
+    /* preserve newline characters so lines added via textContent show on separate lines */
+    .log { height:220px; overflow:auto; border:1px solid #ccc; padding:8px; background:#111; color:#0f0; font-family:monospace; font-size:12px; white-space: pre-wrap; }
+    .small { font-size:14px; color:#555; }
+    input[type="number"] { width:90px; padding:6px; font-size:16px; }
+    button { padding:8px 12px; font-size:14px; }
+  </style>
+</head>
+<body>
+  <h1>WebSerial: 3-digit Counter</h1>
+
+  <div class="controls">
+    <button id="btnConnect">Connect</button>
+    <button id="btnDisconnect" disabled>Disconnect</button>
+
+    <label class="small">Set counter:
+      <input id="counterInput" type="number" min="0" max="999" value="0">
+    </label>
+    <button id="btnSet">Set</button>
+
+    <div class="small" id="status">Status: disconnected</div>
+  </div>
+
+  <div class="counter" id="display">000</div>
+
+  <h3>Serial log</h3>
+  <div class="log" id="log"></div>
+
+  <script>
+    // Minimal WebSerial reader that never writes to the port.
+    let port = null;
+    let reader = null;
+    let keepReading = false;
+    const btnConnect = document.getElementById('btnConnect');
+    const btnDisconnect = document.getElementById('btnDisconnect');
+    const status = document.getElementById('status');
+    const logEl = document.getElementById('log');
+    const display = document.getElementById('display');
+    const counterInput = document.getElementById('counterInput');
+    const btnSet = document.getElementById('btnSet');
+
+    let counter = 0;
+    function updateDisplay() {
+      display.textContent = String(counter).padStart(3,'0');
+      counterInput.value = counter;
+    }
+
+    function appendLog(line) {
+      const t = new Date().toLocaleTimeString();
+      const entry = `[${t}] ${line}`;
+      logEl.textContent += entry + '\n';
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function handleLine(line) {
+      appendLog(line);
+      // Case-insensitive check for lines starting with B:4D
+      const trimmed = line.trim();
+      if (trimmed.length >= 4 && trimmed.slice(0,3).toUpperCase() === 'B:4' ) {
+        // specifically ensure the 3rd hex nibble is 'D' or 'd'
+        // accept both 'B:4D' and 'B:4d'
+        if (trimmed.charAt(3).toUpperCase() === 'D') {
+          counter = (counter + 1) % 1000;
+          updateDisplay();
+        }
+      }
+      // Also support lines that prefix "B:4D" followed by other chars:
+      if (trimmed.toUpperCase().startsWith('B:4D')) {
+        // already incremented above for the short match; to be robust,
+        // ensure we increment only once per line
+        // The above logic handles both short and long; nothing else needed.
+      }
+    }
+
+    async function readLoop() {
+      if (!port) return;
+      keepReading = true;
+      try {
+        const textDecoder = new TextDecoderStream();
+        const readableStreamClosed = port.readable.pipeTo(textDecoder.writable);
+        const readerStream = textDecoder.readable
+          .pipeThrough(new TransformStream(new LineBreakTransformer()))
+          .getReader();
+
+        reader = readerStream;
+        while (keepReading) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          if (value) handleLine(value);
+        }
+      } catch (err) {
+        appendLog('Read error: ' + (err && err.message ? err.message : String(err)));
+      } finally {
+        keepReading = false;
+        if (reader) {
+          try { await reader.cancel(); } catch(e) {}
+          reader = null;
+        }
+      }
+    }
+
+    // LineBreakTransformer to split by CR/LF
+    class LineBreakTransformer {
+      constructor() { this.container = ''; }
+      transform(chunk, controller) {
+        this.container += chunk;
+        const lines = this.container.split(/\r\n|\n/);
+        this.container = lines.pop();
+        for (const line of lines) controller.enqueue(line);
+      }
+      flush(controller) {
+        if (this.container) controller.enqueue(this.container);
+      }
+    }
+
+    btnConnect.addEventListener('click', async () => {
+      try {
+        port = await navigator.serial.requestPort();
+        await port.open({ baudRate: 115200 });
+        status.textContent = 'Status: connected (115200)';
+        btnConnect.disabled = true;
+        btnDisconnect.disabled = false;
+        readLoop();
+      } catch (err) {
+        appendLog('Open error: ' + (err && err.message ? err.message : String(err)));
+      }
+    });
+
+    btnDisconnect.addEventListener('click', async () => {
+      keepReading = false;
+      if (reader) {
+        try { await reader.cancel(); } catch(e) {}
+        reader = null;
+      }
+      if (port) {
+        try { await port.close(); } catch(e) {}
+        port = null;
+      }
+      status.textContent = 'Status: disconnected';
+      btnConnect.disabled = false;
+      btnDisconnect.disabled = true;
+    });
+
+    btnSet.addEventListener('click', () => {
+      let v = parseInt(counterInput.value || '0', 10);
+      if (isNaN(v)) v = 0;
+      v = Math.max(0, Math.min(999, v));
+      counter = v;
+      updateDisplay();
+    });
+
+    // Enter key on number input sets value
+    counterInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        btnSet.click();
+      }
+    });
+
+    // Initialize display
+    updateDisplay();
+  </script>
+</body>
+</html>
