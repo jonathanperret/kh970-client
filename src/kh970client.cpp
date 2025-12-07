@@ -249,7 +249,7 @@ void KH970Client::process(uint8_t bedVal) {
   case 0xd3: // Sent after 2D 6D/ED/1D 7D 13
 
   case 0xcd: // Sent when the right button is passed going to the left
-  case 0xbd: // Sent after CD 6D/ED/1D, and after CD 85 89 if new direction is
+  case 0xbd: // Sent after CD 6D/ED/1D, and after 0D 85 89 if new direction is
              // leftwards.
   case 0x03: // Sent after CD 6D/ED/1D BD
   case 0x43: // Sent instead of 03 after CD 6D/ED/1D BD, sometimes, seen only
@@ -275,7 +275,8 @@ void KH970Client::process(uint8_t bedVal) {
     break;
 
   case 0x05: // Sent after boot sequence, to request the first pattern row
-  case 0x85: // Sent after 0D (turnaround) to request next pattern row
+  case 0x85: // Sent after 05 09 to get second pattern row,
+             // and after 0D (turnaround) to request next pattern row
   {
     for (int i = 0; i < 25; i++) {
       append(pattern[i]);
@@ -284,9 +285,16 @@ void KH970Client::process(uint8_t bedVal) {
     break;
   }
 
-  case 0x09: // Sent after receiving first row's pattern data
-  case 0x89: // Sent after receiving subsequent rows' pattern data
-    append(0xf0);
+  case 0x09: // Request for first row's Memo data
+  case 0x89: // Request for next row's Memo data
+    switch(pattern_row % 6) {
+      case 0: append(B10000000); break;
+      case 1: append(B01000000); break;
+      case 2: append(B11000000); break;
+      case 3: append(B00100000); break;
+      case 4: append(B10100000); break;
+      case 5: append(B01100000); break;
+    }
     break;
 
   default:
