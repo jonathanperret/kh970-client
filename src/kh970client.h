@@ -9,7 +9,7 @@
 #define KH_MOSI MOSI
 #define KH_MISO MISO
 #define KH_SCK SCK
-#define KH_CS 8
+#define KH_CS SS
 #endif
 
 struct KH970Client {
